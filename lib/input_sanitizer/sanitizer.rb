@@ -78,11 +78,15 @@ class InputSanitizer::Sanitizer
 
   def self.nested(*keys)
     options = keys.pop
-    sanitizer = options.delete(:sanitizer)
+    nested_sanitizer = options.delete(:sanitizer)
     keys.push(options)
-    raise "You did not define a sanitizer for nested value" if sanitizer == nil
-    converter = lambda { |value|
-      sanitizer.clean(value)
+    raise "You did not define a sanitizer for nested value" if nested_sanitizer == nil
+
+    converter = lambda { |value, sanitizer|
+      s = nested_sanitizer.new(value)
+      data = s.cleaned
+      sanitizer.send(:concat_errors!, s.errors) if options[:include_errors]
+      data
     }
     self.set_keys_to_type(keys, converter)
   end
@@ -113,7 +117,8 @@ class InputSanitizer::Sanitizer
         add_error(field, :invalid_value, @data[field], ex.message)
       end
     elsif default
-      @cleaned[field] = converter(type).call(default)
+      args = build_converter_args(type, default)
+      @cleaned[field] = converter(type).call(*args)
     elsif required
       add_missing(field)
     end
@@ -142,12 +147,21 @@ class InputSanitizer::Sanitizer
     end
   end
 
+  def concat_errors!(err)
+    @errors.concat(err)
+  end
+
   def convert_single(type, value, namespace)
     if namespace
-      { namespace => converter(type).call(value[namespace]) }
+      args = build_converter_args(type, value[namespace])
+      { namespace => converter(type).call(*args) }
     else
-      converter(type).call(value)
+      converter(type).call(*build_converter_args(type, value))
     end
+  end
+
+  def build_converter_args(type, val)
+    type.is_a?(Proc) ? [val, self] : [val]
   end
 
   def converter(type)

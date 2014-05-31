@@ -1,7 +1,12 @@
 require 'spec_helper'
+require 'pry'
 
 class NestedSanitizer < InputSanitizer::Sanitizer
   integer :foo
+end
+
+class NestedSanitizer2 < InputSanitizer::Sanitizer
+  integer :bar, :required => true
 end
 
 class BasicSanitizer < InputSanitizer::Sanitizer
@@ -12,8 +17,9 @@ class BasicSanitizer < InputSanitizer::Sanitizer
   integer :num
   date :birthday
   time :updated_at
-  custom :cust1, :cust2, :converter => lambda { |v| v.reverse }
+  custom :cust1, :cust2, :converter => lambda { |v, s| v.reverse }
   nested :stuff, :sanitizer => NestedSanitizer, :collection => true, :namespace => :nested
+  nested :stuff2, :sanitizer => NestedSanitizer2, :include_errors => true
 end
 
 class BrokenCustomSanitizer < InputSanitizer::Sanitizer
@@ -33,12 +39,12 @@ class RequiredParameters < BasicSanitizer
 end
 
 class RequiredCustom < BasicSanitizer
-  custom :c1, :required => true, :converter => lambda { |v| v }
+  custom :c1, :required => true, :converter => lambda { |v, s| v }
 end
 
 class DefaultParameters < BasicSanitizer
   integer :funky_number, :default => 5
-  custom :fixed_stuff, :converter => lambda {|v| v }, :default => "default string"
+  custom :fixed_stuff, :converter => lambda {|v, s| v }, :default => "default string"
 end
 
 describe InputSanitizer::Sanitizer do
@@ -205,6 +211,20 @@ describe InputSanitizer::Sanitizer do
         { :nested => { :foo => 8 } },
       ]
       cleaned[:stuff].should eq(expected)
+    end
+
+    context "with errors enabled" do
+      before do
+        @params = { :stuff2 => { :foo => 10 } }
+        cleaned
+      end
+
+      it "adds errors from nested sanitizer to parent" do
+        err = sanitizer.errors.first
+
+        err[:field].should eq(:bar)
+        err[:type].should eq(:missing)
+      end
     end
   end
 
